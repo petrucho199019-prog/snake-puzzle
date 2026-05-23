@@ -219,7 +219,7 @@ function tryBuyLives() {
         lastDeathTime = 0;
         localStorage.setItem('snakestars_death_time', 0);
         updateUI();
-        generateLevel(currentLevel); // Перегенерирует карту, если экран был заблокирован
+        generateLevel(currentLevel);
     });
 }
 
@@ -434,6 +434,9 @@ function startMoving(snake) {
     snake.moving = true;
     triggerHaptic('click');
     
+    // Запоминаем исходный путь змейки на случай столкновения
+    const originalPath = snake.path.map(pt => ({ x: pt.x, y: pt.y }));
+    
     const speed = GRID_SIZE > 20 ? 40 : 90;
     const timer = setInterval(() => {
         const head = snake.path[snake.path.length - 1];
@@ -457,7 +460,14 @@ function startMoving(snake) {
         } else {
             const isBlocked = snakes.some(other => other.path.some(p => p.x === nextX && p.y === nextY));
             if (isBlocked) {
-                clearInterval(timer); snake.moving = false; lives--; updateUI();
+                clearInterval(timer); 
+                snake.moving = false; 
+                lives--; 
+                
+                // Возвращаем змейку на её исходные координаты
+                snake.path = originalPath;
+                
+                updateUI();
                 if (lives <= 0) { showGameOverPopup(); generateLevel(currentLevel); } else { triggerHaptic('error'); }
             } else {
                 snake.path.push({x: nextX, y: nextY}); snake.path.shift();

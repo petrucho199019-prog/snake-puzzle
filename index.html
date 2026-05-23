@@ -35,6 +35,7 @@
             max-width: 480px;
             aspect-ratio: 1 / 1;
             position: relative;
+            margin: 0 auto;
         }
         canvas {
             width: 100%;
@@ -47,13 +48,11 @@
         }
         .btn-group {
             margin-top: 20px;
-            display: flex;
-            gap: 12px;
             width: 90vw;
             max-width: 480px;
         }
         button {
-            flex: 1;
+            width: 100%;
             padding: 14px 10px;
             border: none;
             color: white;
@@ -61,12 +60,12 @@
             cursor: pointer;
             font-weight: bold;
             font-size: 15px;
-            transition: transform 0.1s, opacity 0.2s;
+            background: #2980b9;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
         }
         button:active {
             transform: scale(0.97);
-            opacity: 0.9;
         }
     </style>
 </head>
@@ -74,7 +73,8 @@
 
 <div id="ui-container">
     Уровень: <span id="level-val">1</span><br>
-    <span id="lives-val" style="color: #e74c3c;">❤️❤️❤️❤️</span>
+    <span id="lives-val" style="color: #e74c3c;">❤️❤️❤️❤️</span><br>
+    <span id="timer-val" style="font-size: 14px; color: #95a5a6; height: 20px; display: block;"></span>
 </div>
 
 <div id="canvas-container">
@@ -82,7 +82,7 @@
 </div>
 
 <div class="btn-group">
-    <button onclick="trySkipLevel()" style="background: #2980b9;">Пропустить уровень (⭐ 5)</button>
+    <button onclick="trySkipLevel()">Пропустить (⭐ 5)</button>
 </div>
 
 <script>
@@ -96,8 +96,11 @@ if (tg) {
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-// ЗАГРУЗКА ПРОГРЕССА: Пытаемся взять уровень из памяти, если там пусто — ставим 1
+// Загрузка прогресса и таймера из локальной памяти устройства
 let currentLevel = parseInt(localStorage.getItem('snakestars_level')) || 1;
+let lastDeathTime = parseInt(localStorage.getItem('snakestars_death_time')) || 0;
+const RECOVERY_TIME = 12 * 60 * 60 * 1000; // 12 часов
+
 let GRID_SIZE = 9;
 let CELL = 600 / GRID_SIZE;
 let snakes = [];
@@ -105,8 +108,43 @@ let lives = 4;
 
 const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22', '#e84393', '#00cec9'];
 
-const PRICE_SKIP = 5;
-const PRICE_LIVES = 10;
+// Проверка: прошло ли 12 часов с момента потери жизней при старте
+function checkRecovery() {
+    if (lastDeathTime > 0) {
+        if (Date.now() - lastDeathTime >= RECOVERY_TIME) {
+            lives = 4;
+            lastDeathTime = 0;
+            localStorage.setItem('snakestars_death_time', 0);
+        } else {
+            lives = 0; // Всё еще ждем восстановления
+        }
+    } else {
+        lives = 4;
+    }
+}
+checkRecovery();
+
+// Постоянное обновление таймера на экране
+setInterval(() => {
+    if (lives <= 0 && lastDeathTime > 0) {
+        let remaining = RECOVERY_TIME - (Date.now() - lastDeathTime);
+        if (remaining <= 0) {
+            lives = 4;
+            lastDeathTime = 0;
+            localStorage.setItem('snakestars_death_time', 0);
+            document.getElementById('timer-val').innerText = "";
+            updateUI();
+            generateLevel(currentLevel);
+        } else {
+            let h = Math.floor(remaining / 3600000);
+            let m = Math.floor((remaining % 3600000) / 60000);
+            let s = Math.floor((remaining % 60000) / 1000);
+            document.getElementById('timer-val').innerText = `Восстановление через: ${h}ч ${m}м ${s}с`;
+        }
+    } else {
+        document.getElementById('timer-val').innerText = "";
+    }
+}, 1000);
 
 function triggerHaptic(type) {
     if (tg && tg.HapticFeedback) {
@@ -116,62 +154,46 @@ function triggerHaptic(type) {
     }
 }
 
-// Функция для изменения уровня с ОДНОВРЕМЕННЫМ СОХРАНЕНИЕМ в память
+function updateUI() {
+    let hearts = '';
+    for (let i = 0; i < lives; i++) hearts += '❤️';
+    for (let i = lives; i < 4; i++) hearts += '🖤';
+    document.getElementById('lives-val').innerText = hearts;
+    document.getElementById('level-val').innerText = currentLevel;
+}
+
 function saveAndSetLevel(newLevel) {
     currentLevel = newLevel;
     localStorage.setItem('snakestars_level', currentLevel);
     updateUI();
 }
 
-function updateUI() {
-    let hearts = '';
-    for (let i = 0; i < lives; i++) hearts += '❤️';
-    for (let i = lives; i < 4; i++) hearts += '🖤';
-    
-    // Обновляем только сердечки (без слова "Жизни")
-    document.getElementById('lives-val').innerText = hearts;
-    
-    // Обновляем только номер уровня (без "/ 1000")
-    document.getElementById('level-val').innerText = currentLevel;
-}
-
 function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
     if (!tg || !tg.initData) {
-        alert(`[Тест] Вы приобрели "${itemType}" за ${starsAmount} Звёзд!`);
+        alert(`[Тест] Успешная симуляция: ${itemType} за ${starsAmount} Звёзд!`);
         onSuccessCallback();
         return;
     }
 
+    // Заглушка отправки на реальный бэкенд, если его нет — вызовет красивый нативный Popup
     fetch(`https://your-bot-server.com/create-stars-invoice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            initData: tg.initData,
-            item: itemType,
-            stars: starsAmount
-        })
+        body: JSON.stringify({ initData: tg.initData, item: itemType, stars: starsAmount })
     })
     .then(res => res.json())
     .then(data => {
         if (data.invoiceLink) {
             tg.openInvoice(data.invoiceLink, function(status) {
-                if (status === 'paid') {
-                    triggerHaptic('success');
-                    onSuccessCallback();
-                } else if (status === 'failed') {
-                    tg.showPopup({ title: 'Ошибка', message: 'Платеж отклонен или не прошел.', buttons: [{type: 'close'}] });
-                }
+                if (status === 'paid') { triggerHaptic('success'); onSuccessCallback(); }
             });
         }
     })
-    .catch(err => {
+    .catch(() => {
         tg.showPopup({
             title: '⭐ Покупка в игре',
-            message: `Вы приобретаете: ${itemType}\nСтоимость: ${starsAmount} Telegram Stars.\n\n(Пока сервер бота находится в стадии разработки, мы активируем покупку бесплатно ради теста!)`,
-            buttons: [
-                {id: 'buy', type: 'default', text: 'Оплатить (Тест)'},
-                {type: 'cancel', text: 'Отмена'}
-            ]
+            message: `Вы приобретаете: ${itemType}\nСтоимость: ${starsAmount} Telegram Stars.\n\n(В тестовом режиме начисление бесплатное)`,
+            buttons: [{id: 'buy', type: 'default', text: 'Оплатить (Тест)'}, {type: 'cancel', text: 'Отмена'}]
         }, function(buttonId) {
             if (buttonId === 'buy') {
                 triggerHaptic('success');
@@ -182,10 +204,18 @@ function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
 }
 
 function trySkipLevel() {
+    if (lives <= 0) {
+        if(tg) {
+            tg.showPopup({ title: 'Доступ заблокирован', message: 'Нельзя пропускать уровни, пока у вас 0 жизней. Восстановите их или дождитесь таймера.' });
+        } else {
+            alert('Нельзя пропускать уровни при 0 жизней!');
+        }
+        return;
+    }
     triggerHaptic('click');
-    initiateTelegramPayment(`Пропуск ${currentLevel} уровня`, PRICE_SKIP, () => {
+    initiateTelegramPayment(`Пропуск ${currentLevel} уровня`, 5, () => {
         if (currentLevel < 1000) {
-            saveAndSetLevel(currentLevel + 1); // Сохраняем прогресс
+            saveAndSetLevel(currentLevel + 1);
             lives = 4;
             generateLevel(currentLevel);
         }
@@ -194,40 +224,39 @@ function trySkipLevel() {
 
 function showGameOverPopup() {
     triggerHaptic('error');
-    if (tg && tg.initData) {
+    lastDeathTime = Date.now();
+    localStorage.setItem('snakestars_death_time', lastDeathTime);
+    
+    if (tg) {
         tg.showPopup({
             title: '💀 Жизни закончились!',
-            message: `Хотите мгновенно восстановить 4 ❤️ за ${PRICE_LIVES} Telegram Stars и продолжить проходить текущий уровень?\n\nВ противном случае прогресс сбросится на 1 уровень.`,
+            message: `Вы можете мгновенно восстановить 4 ❤️ за 10 Telegram Stars.\n\nИначе автоматическое восстановление займет 12 часов.`,
             buttons: [
-                {id: 'buy_lives', type: 'default', text: `Купить ❤️ за ⭐ ${PRICE_LIVES}`},
-                {id: 'restart', type: 'destructive', text: 'Начать с 1 уровня'}
+                {id: 'buy_lives', type: 'default', text: 'Купить ❤️ за ⭐ 10'},
+                {id: 'wait', type: 'destructive', text: 'Подождать 12 часов'}
             ]
         }, function(buttonId) {
             if (buttonId === 'buy_lives') {
-                initiateTelegramPayment('Восстановление 4 жизней', PRICE_LIVES, () => {
+                initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
                     lives = 4;
+                    lastDeathTime = 0;
+                    localStorage.setItem('snakestars_death_time', 0);
                     updateUI();
+                    generateLevel(currentLevel);
                 });
-            } else {
-                restartGameFromZero();
             }
         });
     } else {
-        if (confirm(`💀 Жизни закончились!\n\nХотите восстановить 4 ❤️ за ⭐ ${PRICE_LIVES} Telegram Stars и продолжить?`)) {
-            initiateTelegramPayment('Восстановление 4 жизней', PRICE_LIVES, () => {
+        if (confirm(`💀 Жизни закончились!\n\nХотите восстановить 4 ❤️ за ⭐ 10 Telegram Stars?\n\nПри нажатии Отмена начнется отсчет 12 часов.`)) {
+            initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
                 lives = 4;
+                lastDeathTime = 0;
+                localStorage.setItem('snakestars_death_time', 0);
                 updateUI();
+                generateLevel(currentLevel);
             });
-        } else {
-            restartGameFromZero();
         }
     }
-}
-
-function restartGameFromZero() {
-    lives = 4;
-    saveAndSetLevel(1); // При полном проигрыше сбрасываем сохранение на 1 уровень
-    generateLevel(currentLevel);
 }
 
 function normalizePath(p) {
@@ -246,9 +275,7 @@ function rotatePath(p, angles) {
 
 function isLayoutSolvable(testSnakes, gridSize) {
     const grid = Array.from({length: gridSize}, () => Array(gridSize).fill(false));
-    testSnakes.forEach(s => {
-        s.path.forEach(p => { grid[p.y][p.x] = true; });
-    });
+    testSnakes.forEach(s => { s.path.forEach(p => { grid[p.y][p.x] = true; }); });
     let remaining = [...testSnakes];
     let changed = true;
     while (changed && remaining.length > 0) {
@@ -274,42 +301,56 @@ function isLayoutSolvable(testSnakes, gridSize) {
 }
 
 function generateLevel(level) {
+    if (lives <= 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#e74c3c';
+        ctx.font = 'bold 24px system-ui';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillText('Жизни закончилиь!', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.font = '16px system-ui';
+        ctx.fillStyle = '#95a5a6';
+        ctx.fillText('Восстановите их за звезды или подождите таймер', canvas.width / 2, canvas.height / 2 + 15);
+        updateUI();
+        return;
+    }
+
     let numSnakes = 0;
     if (level < 20) {
-        GRID_SIZE = Math.floor(9 + (250 - 9) * (level - 1) / 999);
-        numSnakes = Math.floor(GRID_SIZE * 0.6) + 2;
+        GRID_SIZE = Math.floor(8 + (15 - 8) * (level - 1) / 19);
+        numSnakes = Math.floor(GRID_SIZE * 0.5) + 1;
     } else {
-        GRID_SIZE = Math.floor(22 + (250 - 22) * (level - 20) / 980);
-        numSnakes = Math.min(200, 40 + (level - 20) * 2);
+        GRID_SIZE = Math.min(24, Math.floor(15 + (24 - 15) * (level - 20) / 980));
+        numSnakes = Math.min(60, 10 + Math.floor((level - 20) * 0.05));
     }
     CELL = canvas.width / GRID_SIZE;
     let isSolvable = false;
     let attemptsLevel = 0;
 
-    while (!isSolvable && attemptsLevel < 500) {
+    while (!isSolvable && attemptsLevel < 200) {
         attemptsLevel++;
         snakes = [];
-        const occupied = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
+        const occupied = Array.from({length: GRID_SIZE}, () => Array(gridSize).fill(false));
 
         for (let i = 0; i < numSnakes; i++) {
             let placed = false; let attemptsPlace = 0;
-            while (!placed && attemptsPlace < 100) {
+            while (!placed && attemptsPlace < 50) {
                 attemptsPlace++;
                 let relPath = [];
-                const type = (level >= 30) ? Math.floor(Math.random() * 3) : 0;
+                const type = (level >= 15) ? Math.floor(Math.random() * 3) : 0;
                 
                 if (type === 0) {
-                    const len = 3 + Math.floor(Math.random() * Math.min(4, Math.floor(GRID_SIZE / 4) + 1));
+                    const len = 3 + Math.floor(Math.random() * 2);
                     const isHorizontal = Math.random() > 0.5;
                     for (let j = 0; j < len; j++) relPath.push(isHorizontal ? {x: j, y: 0} : {x: 0, y: j});
                 } else if (type === 1) {
-                    const h = 1 + Math.floor(Math.random() * 2); const w = 1 + Math.floor(Math.random() * 2);
+                    const h = 1; const w = 1;
                     for (let y = h; y >= 0; y--) relPath.push({x: 0, y: y});
                     for (let x = 1; x <= w; x++) relPath.push({x: x, y: 0});
                     for (let y = 1; y <= h; y++) relPath.push({x: w, y: y});
                     relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
                 } else if (type === 2) {
-                    const w1 = 1 + Math.floor(Math.random() * 2); const h = 1; const w2 = 1 + Math.floor(Math.random() * 2);
+                    const w1 = 1; const h = 1; const w2 = 1;
                     for (let x = 0; x <= w1; x++) relPath.push({x: x, y: 0});
                     for (let y = 1; y <= h; y++) relPath.push({x: w1, y: y});
                     for (let x = w1 + 1; x <= w1 + w2; x++) relPath.push({x: x, y: h});
@@ -347,6 +388,8 @@ function generateLevel(level) {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (lives <= 0) return;
+    
     const bodyWidth = CELL * 0.65; const headRadius = CELL * 0.42;
     const eyeShift = CELL * 0.16; const eyeRadius = CELL * 0.11; const pupilRadius = CELL * 0.05;
 
@@ -383,7 +426,7 @@ function startMoving(snake) {
     snake.moving = true;
     triggerHaptic('click');
     
-    const speed = GRID_SIZE > 35 ? 25 : (GRID_SIZE > 15 ? 60 : 120);
+    const speed = GRID_SIZE > 20 ? 40 : 90;
     const timer = setInterval(() => {
         const head = snake.path[snake.path.length - 1];
         const nextX = head.x + snake.dir.x; const nextY = head.y + snake.dir.y;
@@ -396,7 +439,7 @@ function startMoving(snake) {
                     triggerHaptic('success');
                     setTimeout(() => {
                         if (currentLevel < 1000) { 
-                            saveAndSetLevel(currentLevel + 1); // Сохраняем прогресс при честной победе
+                            saveAndSetLevel(currentLevel + 1);
                             lives = 4; 
                             generateLevel(currentLevel); 
                         }
@@ -407,7 +450,7 @@ function startMoving(snake) {
             const isBlocked = snakes.some(other => other.path.some(p => p.x === nextX && p.y === nextY));
             if (isBlocked) {
                 clearInterval(timer); snake.moving = false; lives--; updateUI();
-                if (lives <= 0) { showGameOverPopup(); } else { triggerHaptic('error'); }
+                if (lives <= 0) { showGameOverPopup(); generateLevel(currentLevel); } else { triggerHaptic('error'); }
             } else {
                 snake.path.push({x: nextX, y: nextY}); snake.path.shift();
             }
@@ -435,9 +478,9 @@ canvas.addEventListener('touchstart', (e) => {
     if(e.touches.length > 0) handleInput(e.touches[0].clientX, e.touches[0].clientY); 
 }, {passive: true});
 
-
-// Первичный запуск игры
+// Финальный запуск
 generateLevel(currentLevel);
+updateUI();
 </script>
 </body>
 </html>

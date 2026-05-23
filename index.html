@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Snake Unblock Puzzle - Stars Edition</title>
+    <title>SnakeStars: Puzzle</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -15,22 +15,24 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            font-family: sans-serif;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             color: white;
             overflow: hidden;
             touch-action: manipulation;
+            -webkit-user-select: none;
+            user-select: none;
         }
         #ui-container {
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             font-size: 16px;
             font-weight: bold;
             text-align: center;
-            line-height: 1.4;
+            line-height: 1.5;
             width: 90vw;
         }
         #canvas-container {
             width: 90vw;
-            max-width: 500px;
+            max-width: 480px;
             aspect-ratio: 1 / 1;
             position: relative;
         }
@@ -38,40 +40,40 @@
             width: 100%;
             height: 100%;
             background: #34495e;
-            border-radius: 12px;
+            border-radius: 16px;
             cursor: pointer;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.4);
             display: block;
         }
         .btn-group {
-            margin-top: 15px;
+            margin-top: 20px;
             display: flex;
-            gap: 10px;
+            gap: 12px;
             width: 90vw;
-            max-width: 500px;
+            max-width: 480px;
         }
         button {
             flex: 1;
-            padding: 12px 10px;
+            padding: 14px 10px;
             border: none;
             color: white;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
             font-weight: bold;
-            font-size: 14px;
-            transition: opacity 0.2s;
+            font-size: 15px;
+            transition: transform 0.1s, opacity 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }
         button:active {
-            opacity: 0.8;
+            transform: scale(0.97);
+            opacity: 0.9;
         }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
-    Уровень: <span id="level-val">1</span> / 1000 | 
-    Поле: <span id="grid-val">9x9</span> | 
-    Змей: <span id="snakes-val">0</span><br>
+    Уровень: <span id="level-val">1</span> / 1000<br>
     <span style="color: #e74c3c;">Жизни: <span id="lives-val">❤️❤️❤️❤️</span></span>
 </div>
 
@@ -85,10 +87,11 @@
 </div>
 
 <script>
+// Инициализация Telegram WebApp
 let tg = window.Telegram ? window.Telegram.WebApp : null;
 if (tg) {
     tg.ready();
-    tg.expand();
+    tg.expand(); // Раскрываем Mini App на весь экран телефона
 }
 
 const canvas = document.getElementById('game');
@@ -102,10 +105,11 @@ let lives = 4;
 
 const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22', '#e84393', '#00cec9'];
 
-// Цены в Telegram Stars
+// Конфигурация стоимости в Telegram Stars
 const PRICE_SKIP = 5;
 const PRICE_LIVES = 10;
 
+// Функция тактильной отдачи телефона (вибрация)
 function triggerHaptic(type) {
     if (tg && tg.HapticFeedback) {
         if (type === 'click') tg.HapticFeedback.impactOccurred('light');
@@ -114,32 +118,30 @@ function triggerHaptic(type) {
     }
 }
 
+// Обновление текстовой информации на экране
 function updateUI() {
     let hearts = '';
     for (let i = 0; i < lives; i++) hearts += '❤️';
     for (let i = lives; i < 4; i++) hearts += '🖤';
     document.getElementById('lives-val').innerText = hearts;
     document.getElementById('level-val').innerText = currentLevel;
-    document.getElementById('grid-val').innerText = `${GRID_SIZE}x${GRID_SIZE}`;
-    document.getElementById('snakes-val').innerText = snakes.length;
 }
 
-// ФУНКЦИЯ ОПЛАТЫ ЧЕРЕЗ TELEGRAM STARS
+// Интеграция платежной системы Telegram Stars
 function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
     if (!tg || !tg.initData) {
-        // Если запущено вне Телеграма (в обычном браузере) — активируем демо-режим оплаты
-        alert(`[Демо-режим] Вы успешно купили "${itemType}" за ${starsAmount} Звёзд!`);
+        // Запуск в обычном браузере компьютера для разработки
+        alert(`[Тест] Вы приобрели "${itemType}" за ${starsAmount} Звёзд!`);
         onSuccessCallback();
         return;
     }
 
-    // ВАЖНО: Здесь игра отправляет запрос вашему БОТУ, чтобы тот сгенерировал ссылку на оплату.
-    // Замените URL ниже на адрес вашего сервера, когда настроите бэкенд бота.
+    // Запрос к твоему будущему бэкенд-серверу для создания ссылки на оплату
     fetch(`https://your-bot-server.com/create-stars-invoice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            initData: tg.initData, // Безопасные данные юзера Телеграм
+            initData: tg.initData,
             item: itemType,
             stars: starsAmount
         })
@@ -147,22 +149,22 @@ function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
     .then(res => res.json())
     .then(data => {
         if (data.invoiceLink) {
-            // Открываем нативное окно оплаты Telegram Stars
+            // Открытие оригинального окна оплаты Telegram Stars
             tg.openInvoice(data.invoiceLink, function(status) {
                 if (status === 'paid') {
                     triggerHaptic('success');
                     onSuccessCallback();
                 } else if (status === 'failed') {
-                    tg.showPopup({ title: 'Ошибка', message: 'Не удалось провести оплату Звёздами.', buttons: [{type: 'close'}] });
+                    tg.showPopup({ title: 'Ошибка', message: 'Платеж отклонен или не прошел.', buttons: [{type: 'close'}] });
                 }
             });
         }
     })
     .catch(err => {
-        // Временная заглушка для тестов, пока сервер не подключен:
+        // Умный тестовый режим: если сервер еще не развернут, начисляем покупку бесплатно
         tg.showPopup({
-            title: '⭐ Покупка (Тест)',
-            message: `Вы приобретаете: ${itemType}\nСтоимость: ${starsAmount} Telegram Stars.\n\n(Пока сервер бота не подключен, мы начислим это бесплатно ради теста!)`,
+            title: '⭐ Покупка в игре',
+            message: `Вы приобретаете: ${itemType}\nСтоимость: ${starsAmount} Telegram Stars.\n\n(Пока сервер бота находится в стадии разработки, мы активируем покупку бесплатно ради теста!)`,
             buttons: [
                 {id: 'buy', type: 'default', text: 'Оплатить (Тест)'},
                 {type: 'cancel', text: 'Отмена'}
@@ -189,14 +191,13 @@ function trySkipLevel() {
 
 function showGameOverPopup() {
     triggerHaptic('error');
-    
     if (tg) {
         tg.showPopup({
             title: '💀 Жизни закончились!',
-            message: `Хотите мгновенно восстановить 4 ❤️ за ${PRICE_LIVES} Telegram Stars и продолжить со 100-го уровня?\n\nИначе игра сбросится на 1 уровень.`,
+            message: `Хотите мгновенно восстановить 4 ❤️ за ${PRICE_LIVES} Telegram Stars и продолжить проходить текущий уровень?\n\nВ противном случае прогресс сбросится на 1 уровень.`,
             buttons: [
                 {id: 'buy_lives', type: 'default', text: `Купить ❤️ за ⭐ ${PRICE_LIVES}`},
-                {id: 'restart', type: 'destructive', text: 'Начать заново с 1 ур.'}
+                {id: 'restart', type: 'destructive', text: 'Начать с 1 уровня'}
             ]
         }, function(buttonId) {
             if (buttonId === 'buy_lives') {
@@ -209,7 +210,7 @@ function showGameOverPopup() {
             }
         });
     } else {
-        if (confirm('ГЕЙМ ОВЕР! Купить жизни?')) {
+        if (confirm('Игра окончена! Восстановить жизни?')) {
             lives = 4;
             updateUI();
         } else {
@@ -224,8 +225,7 @@ function restartGameFromZero() {
     generateLevel(currentLevel);
 }
 
-// ... (Весь остальной математический код генерации, отрисовки змей и логики ходов остается без изменений) ...
-
+// Вспомогательные математические алгоритмы для змей
 function normalizePath(p) {
     const minX = Math.min(...p.map(pt => pt.x));
     const minY = Math.min(...p.map(pt => pt.y));
@@ -240,6 +240,7 @@ function rotatePath(p, angles) {
     return normalizePath(current);
 }
 
+// Симуляция решения уровня для проверки его проходимости генератором
 function isLayoutSolvable(testSnakes, gridSize) {
     const grid = Array.from({length: gridSize}, () => Array(gridSize).fill(false));
     testSnakes.forEach(s => {
@@ -269,6 +270,7 @@ function isLayoutSolvable(testSnakes, gridSize) {
     return remaining.length === 0;
 }
 
+// Масштабируемый генератор уровней (от 1 до 1000)
 function generateLevel(level) {
     let numSnakes = 0;
     if (level < 20) {
@@ -276,50 +278,57 @@ function generateLevel(level) {
         numSnakes = Math.floor(GRID_SIZE * 0.6) + 2;
     } else {
         GRID_SIZE = Math.floor(22 + (250 - 22) * (level - 20) / 980);
-        numSnakes = 40 + (level - 20) * 2;
+        numSnakes = Math.min(200, 40 + (level - 20) * 2);
     }
     CELL = canvas.width / GRID_SIZE;
     let isSolvable = false;
     let attemptsLevel = 0;
+
     while (!isSolvable && attemptsLevel < 500) {
         attemptsLevel++;
         snakes = [];
         const occupied = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
+
         for (let i = 0; i < numSnakes; i++) {
             let placed = false; let attemptsPlace = 0;
             while (!placed && attemptsPlace < 100) {
                 attemptsPlace++;
                 let relPath = [];
                 const type = (level >= 30) ? Math.floor(Math.random() * 3) : 0;
-                if (type === 0) {
+                
+                if (type === 0) { // Прямая змейка
                     const len = 3 + Math.floor(Math.random() * Math.min(4, Math.floor(GRID_SIZE / 4) + 1));
                     const isHorizontal = Math.random() > 0.5;
                     for (let j = 0; j < len; j++) relPath.push(isHorizontal ? {x: j, y: 0} : {x: 0, y: j});
-                } else if (type === 1) {
+                } else if (type === 1) { // П-образная змейка
                     const h = 1 + Math.floor(Math.random() * 2); const w = 1 + Math.floor(Math.random() * 2);
                     for (let y = h; y >= 0; y--) relPath.push({x: 0, y: y});
                     for (let x = 1; x <= w; x++) relPath.push({x: x, y: 0});
                     for (let y = 1; y <= h; y++) relPath.push({x: w, y: y});
                     relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
-                } else if (type === 2) {
+                } else if (type === 2) { // Z-образная змейка
                     const w1 = 1 + Math.floor(Math.random() * 2); const h = 1; const w2 = 1 + Math.floor(Math.random() * 2);
                     for (let x = 0; x <= w1; x++) relPath.push({x: x, y: 0});
                     for (let y = 1; y <= h; y++) relPath.push({x: w1, y: y});
                     for (let x = w1 + 1; x <= w1 + w2; x++) relPath.push({x: x, y: h});
                     relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
                 }
+                
                 if (Math.random() > 0.5) relPath.reverse();
                 const maxW = Math.max(...relPath.map(pt => pt.x));
                 const maxH = Math.max(...relPath.map(pt => pt.y));
                 if (GRID_SIZE - maxW <= 0 || GRID_SIZE - maxH <= 0) continue;
+
                 const startX = Math.floor(Math.random() * (GRID_SIZE - maxW));
                 const startY = Math.floor(Math.random() * (GRID_SIZE - maxH));
                 let canPlace = true; const path = [];
+                
                 for (let pt of relPath) {
                     const x = startX + pt.x; const y = startY + pt.y;
                     if (occupied[y][x]) { canPlace = false; break; }
                     path.push({x, y});
                 }
+                
                 if (canPlace) {
                     path.forEach(p => occupied[p.y][p.x] = true);
                     const head = path[path.length - 1]; const neck = path[path.length - 2];
@@ -334,10 +343,13 @@ function generateLevel(level) {
     updateUI(); draw();
 }
 
+// Отрисовка змеек на холсте Canvas
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const bodyWidth = CELL * 0.65; const headRadius = CELL * 0.42;
     const eyeShift = CELL * 0.16; const eyeRadius = CELL * 0.11; const pupilRadius = CELL * 0.05;
+
+    // Хвосты и туловища
     snakes.forEach(s => {
         ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = bodyWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         s.path.forEach((p, i) => {
@@ -346,13 +358,16 @@ function draw() {
         });
         ctx.stroke();
     });
+
+    // Детализированные головы (рисуются, если сетка позволяет рассмотреть детали)
     if (CELL > 4) {
         snakes.forEach(s => {
             const head = s.path[s.path.length - 1];
             const hx = head.x * CELL + CELL / 2; const hy = head.y * CELL + CELL / 2;
             ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(hx, hy, headRadius, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = 'white'; ctx.lineWidth = Math.max(1, CELL * 0.08); ctx.stroke();
-            if (CELL > 12) {
+            
+            if (CELL > 12) { // Глаза
                 ctx.fillStyle = 'white'; ctx.beginPath();
                 ctx.arc(hx + (s.dir.y * eyeShift), hy - (s.dir.x * eyeShift), eyeRadius, 0, Math.PI * 2);
                 ctx.arc(hx - (s.dir.y * eyeShift), hy + (s.dir.x * eyeShift), eyeRadius, 0, Math.PI * 2); ctx.fill();
@@ -364,19 +379,23 @@ function draw() {
     }
 }
 
+// Логика движения выбранной змейки вперед
 function startMoving(snake) {
     if (snake.moving || lives <= 0) return;
     snake.moving = true;
     triggerHaptic('click');
+    
     const speed = GRID_SIZE > 35 ? 25 : (GRID_SIZE > 15 ? 60 : 120);
     const timer = setInterval(() => {
         const head = snake.path[snake.path.length - 1];
         const nextX = head.x + snake.dir.x; const nextY = head.y + snake.dir.y;
+        
         if (nextX < 0 || nextX >= GRID_SIZE || nextY < 0 || nextY >= GRID_SIZE) {
+            // Выползание за карту
             snake.path.shift();
             if (snake.path.length === 0) {
                 clearInterval(timer); snakes = snakes.filter(s => s !== snake); updateUI();
-                if (snakes.length === 0) {
+                if (snakes.length === 0) { // Победа на уровне
                     triggerHaptic('success');
                     setTimeout(() => {
                         if (currentLevel < 1000) { currentLevel++; lives = 4; generateLevel(currentLevel); }
@@ -384,6 +403,7 @@ function startMoving(snake) {
                 }
             }
         } else {
+            // Проверка столкновения
             const isBlocked = snakes.some(other => other.path.some(p => p.x === nextX && p.y === nextY));
             if (isBlocked) {
                 clearInterval(timer); snake.moving = false; lives--; updateUI();
@@ -396,21 +416,30 @@ function startMoving(snake) {
     }, speed);
 }
 
+// Преобразование координат клика/тача с учетом масштабирования экрана
 function handleInput(clientX, clientY) {
     if (lives <= 0) return;
     const rect = canvas.getBoundingClientRect();
     const canvasX = (clientX - rect.left) * (canvas.width / rect.width);
     const canvasY = (clientY - rect.top) * (canvas.height / rect.height);
     const mx = Math.floor(canvasX / CELL); const my = Math.floor(canvasY / CELL);
-    const clickedSnake = snakes.find(s => { const head = s.path[s.path.length - 1]; return head.x === mx && head.y === my; });
+    
+    const clickedSnake = snakes.find(s => { 
+        const head = s.path[s.path.length - 1]; 
+        return head.x === mx && head.y === my; 
+    });
     if (clickedSnake) startMoving(clickedSnake);
 }
 
+// Слушатели управления
 canvas.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
-canvas.addEventListener('touchstart', (e) => { if(e.touches.length > 0) handleInput(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+canvas.addEventListener('touchstart', (e) => { 
+    if(e.touches.length > 0) handleInput(e.touches[0].clientX, e.touches[0].clientY); 
+}, {passive: true});
 
 function resetLevel() { lives = 4; generateLevel(currentLevel); }
 
+// Первичный запуск игры
 generateLevel(currentLevel);
 </script>
 </body>

@@ -73,8 +73,8 @@
 <body>
 
 <div id="ui-container">
-    Уровень: <span id="level-val">1</span> / 1000<br>
-    <span style="color: #e74c3c;">Жизни: <span id="lives-val">❤️❤️❤️❤️</span></span>
+    Уровень: <span id="level-val">1</span><br>
+    <span id="lives-val" style="color: #e74c3c;">❤️❤️❤️❤️</span>
 </div>
 
 <div id="canvas-container">
@@ -128,7 +128,11 @@ function updateUI() {
     let hearts = '';
     for (let i = 0; i < lives; i++) hearts += '❤️';
     for (let i = lives; i < 4; i++) hearts += '🖤';
+    
+    // Обновляем только сердечки (без слова "Жизни")
     document.getElementById('lives-val').innerText = hearts;
+    
+    // Обновляем только номер уровня (без "/ 1000")
     document.getElementById('level-val').innerText = currentLevel;
 }
 

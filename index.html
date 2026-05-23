@@ -191,7 +191,8 @@ function trySkipLevel() {
 
 function showGameOverPopup() {
     triggerHaptic('error');
-    if (tg) {
+    if (tg && tg.initData) {
+        // 1. Этот блок сработает ТОЛЬКО внутри реального Telegram
         tg.showPopup({
             title: '💀 Жизни закончились!',
             message: `Хотите мгновенно восстановить 4 ❤️ за ${PRICE_LIVES} Telegram Stars и продолжить проходить текущий уровень?\n\nВ противном случае прогресс сбросится на 1 уровень.`,
@@ -210,9 +211,12 @@ function showGameOverPopup() {
             }
         });
     } else {
-        if (confirm('Игра окончена! Восстановить жизни?')) {
-            lives = 4;
-            updateUI();
+        // 2. А этот блок сработает при тесте в обычном браузере (теперь он тоже про Stars!)
+        if (confirm(`💀 Жизни закончились!\n\nХотите восстановить 4 ❤️ за ⭐ ${PRICE_LIVES} Telegram Stars и продолжить?`)) {
+            initiateTelegramPayment('Восстановление 4 жизней', PRICE_LIVES, () => {
+                lives = 4;
+                updateUI();
+            });
         } else {
             restartGameFromZero();
         }

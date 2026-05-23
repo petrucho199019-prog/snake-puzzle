@@ -175,7 +175,6 @@ function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
         return;
     }
 
-    // Заглушка отправки на реальный бэкенд, если его нет — вызовет красивый нативный Popup
     fetch(`https://your-bot-server.com/create-stars-invoice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -307,7 +306,7 @@ function generateLevel(level) {
         ctx.font = 'bold 24px system-ui';
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
-        ctx.fillText('Жизни закончилиь!', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText('Жизни закончились!', canvas.width / 2, canvas.height / 2 - 20);
         ctx.font = '16px system-ui';
         ctx.fillStyle = '#95a5a6';
         ctx.fillText('Восстановите их за звезды или подождите таймер', canvas.width / 2, canvas.height / 2 + 15);
@@ -330,7 +329,7 @@ function generateLevel(level) {
     while (!isSolvable && attemptsLevel < 200) {
         attemptsLevel++;
         snakes = [];
-        const occupied = Array.from({length: GRID_SIZE}, () => Array(gridSize).fill(false));
+        const occupied = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
 
         for (let i = 0; i < numSnakes; i++) {
             let placed = false; let attemptsPlace = 0;

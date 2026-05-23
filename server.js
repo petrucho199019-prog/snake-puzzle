@@ -46,5 +46,9 @@ app.post('/create-stars-invoice', async (req, res) => {
     }
 });
 
+// Короткая ссылка для Pinterest/Соцсетей
+app.get('/go', (req, res) => {
+    res.redirect('https://t.me/SnakePuzzleStarsBot/SnakeStars');
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));

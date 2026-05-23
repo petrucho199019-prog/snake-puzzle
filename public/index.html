@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SnakeStars: Puzzle</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            margin: 0; padding: 0; background: #2c3e50;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; color: white;
+            overflow: hidden; touch-action: manipulation; -webkit-user-select: none; user-select: none;
+        }
+        #ui-container { margin-bottom: 15px; font-size: 16px; font-weight: bold; text-align: center; line-height: 1.5; width: 90vw; }
+        #canvas-container { width: 90vw; max-width: 480px; aspect-ratio: 1 / 1; position: relative; margin: 0 auto; }
+        canvas { width: 100%; height: 100%; background: #34495e; border-radius: 16px; cursor: pointer; box-shadow: 0 12px 30px rgba(0,0,0,0.4); display: block; }
+        .btn-group { margin-top: 20px; display: flex; gap: 12px; width: 90vw; max-width: 480px; }
+        button { flex: 1; padding: 14px 10px; border: none; color: white; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.1s; }
+        button:active { transform: scale(0.97); }
+    </style>
+</head>
+<body>
+
+<div id="ui-container">
+    Уровень: <span id="level-val">1</span><br>
+    <span id="lives-val" style="color: #e74c3c;">❤️❤️❤️❤️</span><br>
+    <span id="timer-val" style="font-size: 14px; color: #95a5a6; height: 20px; display: block;"></span>
+</div>
+
+<div id="canvas-container">
+    <canvas id="game" width="600" height="600"></canvas>
+</div>
+
+<div class="btn-group">
+    <button onclick="tryBuyLives()" style="background: #e74c3c;">Купить ❤️ (⭐ 10)</button>
+    <button onclick="trySkipLevel()" style="background: #2980b9;">Пропустить (⭐ 5)</button>
+</div>
+
+<script>
+let tg = window.Telegram ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); }
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let currentLevel = parseInt(localStorage.getItem('snakestars_level')) || 1;
+let lastDeathTime = parseInt(localStorage.getItem('snakestars_death_time')) || 0;
+const RECOVERY_TIME = 12 * 60 * 60 * 1000;
+
+let GRID_SIZE = 9;
+let CELL = 600 / GRID_SIZE;
+let snakes = [];
+let lives = 4;
+
+const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22', '#e84393', '#00cec9'];
+
+function checkRecovery() {
+    if (lastDeathTime > 0) {
+        if (Date.now() - lastDeathTime >= RECOVERY_TIME) {
+            lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0);
+        } else { lives = 0; }
+    } else { lives = 4; }
+}
+checkRecovery();
+
+setInterval(() => {
+    if (lives <= 0 && lastDeathTime > 0) {
+        let remaining = RECOVERY_TIME - (Date.now() - lastDeathTime);
+        if (remaining <= 0) {
+            lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0);
+            document.getElementById('timer-val').innerText = ""; updateUI(); generateLevel(currentLevel);
+        } else {
+            let h = Math.floor(remaining / 3600000); let m = Math.floor((remaining % 3600000) / 60000); let s = Math.floor((remaining % 60000) / 1000);
+            document.getElementById('timer-val').innerText = `Восстановление через: ${h}ч ${m}м ${s}с`;
+        }
+    } else { document.getElementById('timer-val').innerText = ""; }
+}, 1000);
+
+function triggerHaptic(type) {
+    if (tg && tg.HapticFeedback) {
+        if (type === 'click') tg.HapticFeedback.impactOccurred('light');
+        if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
+        if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
+    }
+}
+
+function updateUI() {
+    let hearts = '';
+    for (let i = 0; i < lives; i++) hearts += '❤️';
+    for (let i = lives; i < 4; i++) hearts += '🖤';
+    document.getElementById('lives-val').innerText = hearts;
+    document.getElementById('level-val').innerText = currentLevel;
+}
+
+function saveAndSetLevel(newLevel) {
+    currentLevel = newLevel; localStorage.setItem('snakestars_level', currentLevel); updateUI();
+}
+
+function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
+    if (!tg || !tg.initData) {
+        alert(`[Тест] Успешная симуляция: ${itemType} за ${starsAmount} Звёзд!`);
+        onSuccessCallback(); return;
+    }
+
+    // ВНИМАНИЕ: Здесь теперь относительный путь, сервер поймет его автоматически
+    fetch(`/create-stars-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData: tg.initData, item: itemType, stars: starsAmount })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.invoiceLink) {
+            tg.openInvoice(data.invoiceLink, function(status) {
+                if (status === 'paid') { triggerHaptic('success'); onSuccessCallback(); }
+            });
+        }
+    })
+    .catch(() => {
+        tg.showPopup({
+            title: '⭐ Покупка в игре',
+            message: `Вы приобретаете: ${itemType}\nСтоимость: ${starsAmount} Telegram Stars.`,
+            buttons: [{id: 'buy', type: 'default', text: 'Оплатить (Тест)'}, {type: 'cancel', text: 'Отмена'}]
+        }, function(buttonId) { if (buttonId === 'buy') { triggerHaptic('success'); onSuccessCallback(); } });
+    });
+}
+
+function tryBuyLives() {
+    if (lives >= 4) {
+        if (tg) { tg.showPopup({ title: 'Полные жизни', message: 'У вас уже максимальное количество жизней (4 ❤️).' }); }
+        else { alert('У вас уже максимальное количество жизней!'); }
+        return;
+    }
+    triggerHaptic('click');
+    initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
+        lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0);
+        updateUI(); generateLevel(currentLevel);
+    });
+}
+
+function trySkipLevel() {
+    if (lives <= 0) {
+        if(tg) { tg.showPopup({ title: 'Доступ заблокирован', message: 'Нельзя пропускать уровни при 0 жизней.' }); }
+        else { alert('Нельзя пропускать уровни при 0 жизней!'); }
+        return;
+    }
+    triggerHaptic('click');
+    initiateTelegramPayment(`Пропуск ${currentLevel} уровня`, 5, () => {
+        if (currentLevel < 1000) { saveAndSetLevel(currentLevel + 1); lives = 4; generateLevel(currentLevel); }
+    });
+}
+
+function showGameOverPopup() {
+    triggerHaptic('error'); lastDeathTime = Date.now(); localStorage.setItem('snakestars_death_time', lastDeathTime);
+    if (tg) {
+        tg.showPopup({
+            title: '💀 Жизни закончились!',
+            message: `Мгновенно восстановить 4 ❤️ за 10 Telegram Stars или подождать 12 часов.`,
+            buttons: [{id: 'buy_lives', type: 'default', text: 'Купить ❤️ за ⭐ 10'}, {id: 'wait', type: 'destructive', text: 'Подождать'}]
+        }, function(buttonId) { if (buttonId === 'buy_lives') tryBuyLives(); });
+    } else { if (confirm(`💀 Жизни закончились!\n\nКупить 4 ❤️ за ⭐ 10?`)) tryBuyLives(); }
+}
+
+function normalizePath(p) {
+    const minX = Math.min(...p.map(pt => pt.x)); const minY = Math.min(...p.map(pt => pt.y));
+    return p.map(pt => ({ x: pt.x - minX, y: pt.y - minY }));
+}
+
+function rotatePath(p, angles) {
+    let current = [...p];
+    for (let a = 0; a < angles; a++) { current = current.map(pt => ({ x: -pt.y, y: pt.x })); }
+    return normalizePath(current);
+}
+
+function isLayoutSolvable(testSnakes, gridSize) {
+    const grid = Array.from({length: gridSize}, () => Array(gridSize).fill(false));
+    testSnakes.forEach(s => { s.path.forEach(p => { grid[p.y][p.x] = true; }); });
+    let remaining = [...testSnakes]; let changed = true;
+    while (changed && remaining.length > 0) {
+        changed = false;
+        for (let i = 0; i < remaining.length; i++) {
+            const s = remaining[i]; let canExit = true;
+            let cx = s.path[s.path.length - 1].x + s.dir.x; let cy = s.path[s.path.length - 1].y + s.dir.y;
+            while (cx >= 0 && cx < gridSize && cy >= 0 && cy < gridSize) {
+                if (grid[cy][cx]) { canExit = false; break; }
+                cx += s.dir.x; cy += s.dir.y;
+            }
+            if (canExit) {
+                s.path.forEach(p => { grid[p.y][p.x] = false; }); remaining.splice(i, 1); changed = true; break;
+            }
+        }
+    }
+    return remaining.length === 0;
+}
+
+function generateLevel(level) {
+    if (lives <= 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#e74c3c'; ctx.font = 'bold 24px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+        ctx.fillText('Жизни закончились!', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.font = '16px system-ui'; ctx.fillStyle = '#95a5a6';
+        ctx.fillText('Восстановите их за звезды или подождите таймер', canvas.width / 2, canvas.height / 2 + 15);
+        updateUI(); return;
+    }
+    let numSnakes = 0;
+    if (level < 20) {
+        GRID_SIZE = Math.floor(8 + (15 - 8) * (level - 1) / 19); numSnakes = Math.floor(GRID_SIZE * 0.5) + 1;
+    } else {
+        GRID_SIZE = Math.min(24, Math.floor(15 + (24 - 15) * (level - 20) / 980)); numSnakes = Math.min(60, 10 + Math.floor((level - 20) * 0.05));
+    }
+    CELL = canvas.width / GRID_SIZE; let isSolvable = false; let attemptsLevel = 0;
+    while (!isSolvable && attemptsLevel < 200) {
+        attemptsLevel++; snakes = []; const occupied = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
+        for (let i = 0; i < numSnakes; i++) {
+            let placed = false; let attemptsPlace = 0;
+            while (!placed && attemptsPlace < 50) {
+                attemptsPlace++; let relPath = []; const type = (level >= 15) ? Math.floor(Math.random() * 3) : 0;
+                if (type === 0) {
+                    const len = 3 + Math.floor(Math.random() * 2); const isHorizontal = Math.random() > 0.5;
+                    for (let j = 0; j < len; j++) relPath.push(isHorizontal ? {x: j, y: 0} : {x: 0, y: j});
+                } else if (type === 1) {
+                    const h = 1; const w = 1; for (let y = h; y >= 0; y--) relPath.push({x: 0, y: y});
+                    for (let x = 1; x <= w; x++) relPath.push({x: x, y: 0}); for (let y = 1; y <= h; y++) relPath.push({x: w, y: y});
+                    relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
+                } else if (type === 2) {
+                    const w1 = 1; const h = 1; const w2 = 1; for (let x = 0; x <= w1; x++) relPath.push({x: x, y: 0});
+                    for (let y = 1; y <= h; y++) relPath.push({x: w1, y: y}); for (let x = w1 + 1; x <= w1 + w2; x++) relPath.push({x: x, y: h});
+                    relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
+                }
+                if (Math.random() > 0.5) relPath.reverse();
+                const maxW = Math.max(...relPath.map(pt => pt.x)); const maxH = Math.max(...relPath.map(pt => pt.y));
+                if (GRID_SIZE - maxW <= 0 || GRID_SIZE - maxH <= 0) continue;
+                const startX = Math.floor(Math.random() * (GRID_SIZE - maxW)); const startY = Math.floor(Math.random() * (GRID_SIZE - maxH));
+                let canPlace = true; const path = [];
+                for (let pt of relPath) {
+                    const x = startX + pt.x; const y = startY + pt.y; if (occupied[y][x]) { canPlace = false; break; }
+                    path.push({x, y});
+                }
+                if (canPlace) {
+                    path.forEach(p => occupied[p.y][p.x] = true); const head = path[path.length - 1]; const neck = path[path.length - 2];
+                    const dir = { x: head.x - neck.x, y: head.y - neck.y };
+                    snakes.push({ id: i, path: path, dir: dir, color: COLORS[Math.floor(Math.random() * COLORS.length)], moving: false });
+                    placed = true;
+                }
+            }
+        }
+        if (snakes.length > 0 && isLayoutSolvable(snakes, GRID_SIZE)) isSolvable = true;
+    }
+    updateUI(); draw();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); if (lives <= 0) return;
+    const bodyWidth = CELL * 0.65; const headRadius = CELL * 0.42;
+    const eyeShift = CELL * 0.16; const eyeRadius = CELL * 0.11; const pupilRadius = CELL * 0.05;
+    snakes.forEach(s => {
+        ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = bodyWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        s.path.forEach((p, i) => { const x = p.x * CELL + CELL / 2; const y = p.y * CELL + CELL / 2; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+        ctx.stroke();
+    });
+    if (CELL > 4) {
+        snakes.forEach(s => {
+            const head = s.path[s.path.length - 1]; const hx = head.x * CELL + CELL / 2; const hy = head.y * CELL + CELL / 2;
+            ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(hx, hy, headRadius, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = 'white'; ctx.lineWidth = Math.max(1, CELL * 0.08); ctx.stroke();
+            if (CELL > 12) {
+                ctx.fillStyle = 'white'; ctx.beginPath();
+                ctx.arc(hx + (s.dir.y * eyeShift), hy - (s.dir.x * eyeShift), eyeRadius, 0, Math.PI * 2);
+                ctx.arc(hx - (s.dir.y * eyeShift), hy + (s.dir.x * eyeShift), eyeRadius, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'black'; ctx.beginPath();
+                ctx.arc(hx + (s.dir.y * eyeShift) + (s.dir.x * (CELL * 0.05)), hy - (s.dir.x * eyeShift) + (s.dir.y * (CELL * 0.05)), pupilRadius, 0, Math.PI * 2);
+                ctx.arc(hx - (s.dir.y * eyeShift) + (s.dir.x * (CELL * 0.05)), hy + (s.dir.x * eyeShift) + (s.dir.y * (CELL * 0.05)), pupilRadius, 0, Math.PI * 2); ctx.fill();
+            }
+        });
+    }
+}
+
+function startMoving(snake) {
+    if (snake.moving || lives <= 0) return;
+    snake.moving = true; triggerHaptic('click');
+    const originalPath = snake.path.map(pt => ({ x: pt.x, y: pt.y }));
+    const speed = GRID_SIZE > 20 ? 40 : 90;
+    const timer = setInterval(() => {
+        const head = snake.path[snake.path.length - 1]; const nextX = head.x + snake.dir.x; const nextY = head.y + snake.dir.y;
+        if (nextX < 0 || nextX >= GRID_SIZE || nextY < 0 || nextY >= GRID_SIZE) {
+            snake.path.shift();
+            if (snake.path.length === 0) {
+                clearInterval(timer); snakes = snakes.filter(s => s !== snake); updateUI();
+                if (snakes.length === 0) {
+                    triggerHaptic('success');
+                    setTimeout(() => { if (currentLevel < 1000) { saveAndSetLevel(currentLevel + 1); lives = 4; generateLevel(currentLevel); } }, 300);
+                }
+            }
+        } else {
+            const isBlocked = snakes.some(other => other.path.some(p => p.x === nextX && p.y === nextY));
+            if (isBlocked) {
+                clearInterval(timer); snake.moving = false; lives--; snake.path = originalPath; updateUI();
+                if (lives <= 0) { showGameOverPopup(); generateLevel(currentLevel); } else { triggerHaptic('error'); }
+            } else { snake.path.push({x: nextX, y: nextY}); snake.path.shift(); }
+        }
+        draw();
+    }, speed);
+}
+
+function handleInput(clientX, clientY) {
+    if (lives <= 0) return;
+    const rect = canvas.getBoundingClientRect(); const canvasX = (clientX - rect.left) * (canvas.width / rect.width); const canvasY = (clientY - rect.top) * (canvas.height / rect.height);
+    const mx = Math.floor(canvasX / CELL); const my = Math.floor(canvasY / CELL);
+    const clickedSnake = snakes.find(s => { const head = s.path[s.path.length - 1]; return head.x === mx && head.y === my; });
+    if (clickedSnake) startMoving(clickedSnake);
+}
+
+canvas.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
+canvas.addEventListener('touchstart', (e) => { if(e.touches.length > 0) handleInput(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+
+generateLevel(currentLevel);
+updateUI();
+</script>
+</body>
+</html>

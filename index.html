@@ -48,19 +48,20 @@
         }
         .btn-group {
             margin-top: 20px;
+            display: flex;
+            gap: 12px;
             width: 90vw;
             max-width: 480px;
         }
         button {
-            width: 100%;
+            flex: 1;
             padding: 14px 10px;
             border: none;
             color: white;
             border-radius: 10px;
             cursor: pointer;
             font-weight: bold;
-            font-size: 15px;
-            background: #2980b9;
+            font-size: 14px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
             transition: transform 0.1s;
         }
@@ -82,7 +83,8 @@
 </div>
 
 <div class="btn-group">
-    <button onclick="trySkipLevel()">Пропустить (⭐ 5)</button>
+    <button onclick="tryBuyLives()" style="background: #e74c3c;">Купить ❤️ (⭐ 10)</button>
+    <button onclick="trySkipLevel()" style="background: #2980b9;">Пропустить (⭐ 5)</button>
 </div>
 
 <script>
@@ -202,6 +204,25 @@ function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
     });
 }
 
+function tryBuyLives() {
+    if (lives >= 4) {
+        if (tg) {
+            tg.showPopup({ title: 'Полные жизни', message: 'У вас уже максимальное количество жизней (4 ❤️). Покупка не требуется!' });
+        } else {
+            alert('У вас уже максимальное количество жизней (4 ❤️)!');
+        }
+        return;
+    }
+    triggerHaptic('click');
+    initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
+        lives = 4;
+        lastDeathTime = 0;
+        localStorage.setItem('snakestars_death_time', 0);
+        updateUI();
+        generateLevel(currentLevel); // Перегенерирует карту, если экран был заблокирован
+    });
+}
+
 function trySkipLevel() {
     if (lives <= 0) {
         if(tg) {
@@ -236,24 +257,12 @@ function showGameOverPopup() {
             ]
         }, function(buttonId) {
             if (buttonId === 'buy_lives') {
-                initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
-                    lives = 4;
-                    lastDeathTime = 0;
-                    localStorage.setItem('snakestars_death_time', 0);
-                    updateUI();
-                    generateLevel(currentLevel);
-                });
+                tryBuyLives();
             }
         });
     } else {
         if (confirm(`💀 Жизни закончились!\n\nХотите восстановить 4 ❤️ за ⭐ 10 Telegram Stars?\n\nПри нажатии Отмена начнется отсчет 12 часов.`)) {
-            initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
-                lives = 4;
-                lastDeathTime = 0;
-                localStorage.setItem('snakestars_death_time', 0);
-                updateUI();
-                generateLevel(currentLevel);
-            });
+            tryBuyLives();
         }
     }
 }

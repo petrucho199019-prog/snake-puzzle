@@ -1,29 +1,27 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SnakeStars: Puzzle</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body {
-            margin: 0; padding: 0; background: #2c3e50;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; color: white;
-            overflow: hidden; touch-action: manipulation; -webkit-user-select: none; user-select: none;
-        }
-        #ui-container { margin-bottom: 15px; font-size: 16px; font-weight: bold; text-align: center; line-height: 1.5; width: 90vw; }
+        body { margin: 0; padding: 0; background: #2c3e50; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; color: white; overflow: hidden; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+        #ui-container { margin-bottom: 12px; font-size: 16px; font-weight: bold; text-align: center; line-height: 1.5; width: 90vw; }
+        #moves-val { color: #f1c40f; font-size: 18px; }
+        #moves-val.low { color: #e74c3c; animation: pulse 0.6s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
         #canvas-container { width: 90vw; max-width: 480px; aspect-ratio: 1 / 1; position: relative; margin: 0 auto; }
         canvas { width: 100%; height: 100%; background: #34495e; border-radius: 16px; cursor: pointer; box-shadow: 0 12px 30px rgba(0,0,0,0.4); display: block; }
-        .btn-group { margin-top: 20px; display: flex; gap: 12px; width: 90vw; max-width: 480px; }
-        button { flex: 1; padding: 14px 10px; border: none; color: white; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.1s; }
+        .btn-group { margin-top: 16px; display: flex; gap: 10px; width: 90vw; max-width: 480px; flex-wrap: wrap; justify-content: center; }
+        button { flex: 1; padding: 12px 8px; border: none; color: white; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 13px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: transform 0.1s; min-width: 90px; }
         button:active { transform: scale(0.97); }
     </style>
 </head>
 <body>
 
 <div id="ui-container">
-    Уровень: <span id="level-val">1</span><br>
+    Level: <span id="level-val">1</span> &nbsp; | &nbsp; Moves: <span id="moves-val">0/0</span><br>
     <span id="lives-val" style="color: #e74c3c;">❤️❤️❤️❤️</span><br>
     <span id="timer-val" style="font-size: 14px; color: #95a5a6; height: 20px; display: block;"></span>
 </div>
@@ -33,8 +31,8 @@
 </div>
 
 <div class="btn-group">
-    <button onclick="tryBuyLives()" style="background: #e74c3c;">Купить ❤️ (⭐ 10)</button>
-    <button onclick="trySkipLevel()" style="background: #2980b9;">Пропустить (⭐ 5)</button>
+    <button onclick="tryBuyLives()" style="background: #e74c3c;">❤️ ⭐20</button>
+    <button onclick="trySkipLevel()" style="background: #2980b9;">⏭️ ⭐50</button>
 </div>
 
 <script>
@@ -48,18 +46,67 @@ let currentLevel = parseInt(localStorage.getItem('snakestars_level')) || 1;
 let lastDeathTime = parseInt(localStorage.getItem('snakestars_death_time')) || 0;
 const RECOVERY_TIME = 12 * 60 * 60 * 1000;
 
-let GRID_SIZE = 9;
+const PRICE_LIVES = 20;
+const PRICE_SKIP = 50;
+
+let GRID_SIZE = 7;
 let CELL = 600 / GRID_SIZE;
 let snakes = [];
+let initialSnakes = [];
 let lives = 4;
+let movesLeft = 0;
+let maxMoves = 0;
+let warningTimeout = null;
 
 const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f1c40f', '#9b59b6', '#1abc9c', '#e67e22', '#e84393', '#00cec9'];
 
+// ===== DIFFICULTY CURVE =====
+function getLevelConfig(level) {
+    let grid, numSnakes, chainDepth, moveBonus;
+
+    if (level <= 5) {
+        grid = 6;
+        numSnakes = 2 + Math.floor((level - 1) / 2);
+        chainDepth = 1;
+        moveBonus = 3;
+    } else if (level <= 15) {
+        grid = 7;
+        numSnakes = 3 + Math.floor((level - 5) / 3);
+        chainDepth = 2;
+        moveBonus = 3;
+    } else if (level <= 40) {
+        grid = 8 + Math.floor((level - 15) / 10);
+        numSnakes = 4 + Math.floor((level - 15) / 5);
+        chainDepth = 2 + Math.floor((level - 15) / 12);
+        moveBonus = 2;
+    } else if (level <= 100) {
+        grid = Math.min(13, 10 + Math.floor((level - 40) / 20));
+        numSnakes = 8 + Math.floor((level - 40) / 6);
+        chainDepth = 3 + Math.floor((level - 40) / 20);
+        moveBonus = 2;
+    } else if (level <= 300) {
+        grid = Math.min(16, 13 + Math.floor((level - 100) / 60));
+        numSnakes = 18 + Math.floor((level - 100) / 15);
+        chainDepth = 5 + Math.floor((level - 100) / 60);
+        moveBonus = 1;
+    } else {
+        grid = Math.min(20, 16 + Math.floor((level - 300) / 150));
+        numSnakes = 31 + Math.floor((level - 300) / 20);
+        chainDepth = 8;
+        moveBonus = 1;
+    }
+
+    const maxByGrid = Math.floor(grid * grid * 0.4 / 4);
+    numSnakes = Math.min(numSnakes, Math.max(2, maxByGrid));
+    chainDepth = Math.min(chainDepth, numSnakes);
+
+    return { grid, numSnakes, chainDepth, moveBonus };
+}
+
 function checkRecovery() {
     if (lastDeathTime > 0) {
-        if (Date.now() - lastDeathTime >= RECOVERY_TIME) {
-            lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0);
-        } else { lives = 0; }
+        if (Date.now() - lastDeathTime >= RECOVERY_TIME) { lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0); }
+        else { lives = 0; }
     } else { lives = 4; }
 }
 checkRecovery();
@@ -72,9 +119,9 @@ setInterval(() => {
             document.getElementById('timer-val').innerText = ""; updateUI(); generateLevel(currentLevel);
         } else {
             let h = Math.floor(remaining / 3600000); let m = Math.floor((remaining % 3600000) / 60000); let s = Math.floor((remaining % 60000) / 1000);
-            document.getElementById('timer-val').innerText = `Восстановление через: ${h}ч ${m}м ${s}с`;
+            document.getElementById('timer-val').innerText = `Recovery in: ${h}h ${m}m ${s}s`;
         }
-    } else { document.getElementById('timer-val').innerText = ""; }
+    }
 }, 1000);
 
 function triggerHaptic(type) {
@@ -82,6 +129,7 @@ function triggerHaptic(type) {
         if (type === 'click') tg.HapticFeedback.impactOccurred('light');
         if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
         if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
+        if (type === 'warning') tg.HapticFeedback.notificationOccurred('warning');
     }
 }
 
@@ -91,63 +139,57 @@ function updateUI() {
     for (let i = lives; i < 4; i++) hearts += '🖤';
     document.getElementById('lives-val').innerText = hearts;
     document.getElementById('level-val').innerText = currentLevel;
+    const movesEl = document.getElementById('moves-val');
+    movesEl.innerText = `${movesLeft}/${maxMoves}`;
+    if (movesLeft <= 1 && maxMoves > 0) movesEl.classList.add('low');
+    else movesEl.classList.remove('low');
 }
 
-function saveAndSetLevel(newLevel) {
-    currentLevel = newLevel; localStorage.setItem('snakestars_level', currentLevel); updateUI();
-}
+function saveAndSetLevel(newLevel) { currentLevel = newLevel; localStorage.setItem('snakestars_level', currentLevel); updateUI(); }
 
+// ===== TELEGRAM PAYMENTS =====
 function initiateTelegramPayment(itemType, starsAmount, onSuccessCallback) {
-    if (!tg || !tg.initData) {
-        alert(`[Тест] Успешная симуляция: ${itemType} за ${starsAmount} Звёзд!`);
-        onSuccessCallback(); return;
-    }
-
-    // ВНИМАНИЕ: Здесь теперь относительный путь, сервер поймет его автоматически
+    if (!tg || !tg.initData) { alert(`[Test] Successful simulation: ${itemType} for ${starsAmount} Stars!`); onSuccessCallback(); return; }
     fetch(`/create-stars-invoice`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ initData: tg.initData, item: itemType, stars: starsAmount })
     })
     .then(res => res.json())
     .then(data => {
         if (data.invoiceLink) {
-            tg.openInvoice(data.invoiceLink, function(status) {
-                if (status === 'paid') { triggerHaptic('success'); onSuccessCallback(); }
-            });
+            tg.openInvoice(data.invoiceLink, function(status) { if (status === 'paid') { triggerHaptic('success'); onSuccessCallback(); } });
         }
     })
     .catch(() => {
         tg.showPopup({
-            title: '⭐ Покупка в игре',
-            message: `Вы приобретаете: ${itemType}\nСтоимость: ${starsAmount} Telegram Stars.`,
-            buttons: [{id: 'buy', type: 'default', text: 'Оплатить (Тест)'}, {type: 'cancel', text: 'Отмена'}]
+            title: '⭐ In-game Purchase', message: `You are buying: ${itemType}\nPrice: ${starsAmount} Telegram Stars.`,
+            buttons: [{id: 'buy', type: 'default', text: 'Pay (Test)'}, {type: 'cancel', text: 'Cancel'}]
         }, function(buttonId) { if (buttonId === 'buy') { triggerHaptic('success'); onSuccessCallback(); } });
     });
 }
 
 function tryBuyLives() {
     if (lives >= 4) {
-        if (tg) { tg.showPopup({ title: 'Полные жизни', message: 'У вас уже максимальное количество жизней (4 ❤️).' }); }
-        else { alert('У вас уже максимальное количество жизней!'); }
+        if (tg) tg.showPopup({ title: 'Lives are full', message: 'You already have 4 ❤️.' });
+        else alert('Lives are full!');
         return;
     }
     triggerHaptic('click');
-    initiateTelegramPayment('Восстановление 4 жизней', 10, () => {
-        lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0);
-        updateUI(); generateLevel(currentLevel);
+    initiateTelegramPayment('Restore 4 lives', PRICE_LIVES, () => {
+        lives = 4; lastDeathTime = 0; localStorage.setItem('snakestars_death_time', 0); 
+        document.getElementById('timer-val').innerText = ''; updateUI(); generateLevel(currentLevel);
     });
 }
 
 function trySkipLevel() {
     if (lives <= 0) {
-        if(tg) { tg.showPopup({ title: 'Доступ заблокирован', message: 'Нельзя пропускать уровни при 0 жизней.' }); }
-        else { alert('Нельзя пропускать уровни при 0 жизней!'); }
+        if(tg) tg.showPopup({ title: 'Access denied', message: 'Cannot skip with 0 lives.' });
+        else alert('Cannot skip with 0 lives!');
         return;
     }
     triggerHaptic('click');
-    initiateTelegramPayment(`Пропуск ${currentLevel} уровня`, 5, () => {
-        if (currentLevel < 1000) { saveAndSetLevel(currentLevel + 1); lives = 4; generateLevel(currentLevel); }
+    initiateTelegramPayment(`Skip level ${currentLevel}`, PRICE_SKIP, () => {
+        if (currentLevel < 1000) { saveAndSetLevel(currentLevel + 1); generateLevel(currentLevel); }
     });
 }
 
@@ -155,167 +197,401 @@ function showGameOverPopup() {
     triggerHaptic('error'); lastDeathTime = Date.now(); localStorage.setItem('snakestars_death_time', lastDeathTime);
     if (tg) {
         tg.showPopup({
-            title: '💀 Жизни закончились!',
-            message: `Мгновенно восстановить 4 ❤️ за 10 Telegram Stars или подождать 12 часов.`,
-            buttons: [{id: 'buy_lives', type: 'default', text: 'Купить ❤️ за ⭐ 10'}, {id: 'wait', type: 'destructive', text: 'Подождать'}]
+            title: '💀 Out of lives!', message: `Restore 4 ❤️ for ${PRICE_LIVES} Stars or wait 12 hours.`,
+            buttons: [{id: 'buy_lives', type: 'default', text: `Buy ❤️ ⭐${PRICE_LIVES}`}, {id: 'wait', type: 'destructive', text: 'Wait'}]
         }, function(buttonId) { if (buttonId === 'buy_lives') tryBuyLives(); });
-    } else { if (confirm(`💀 Жизни закончились!\n\nКупить 4 ❤️ за ⭐ 10?`)) tryBuyLives(); }
+    } else { if (confirm(`💀 Out of lives!\nBuy 4 ❤️ for ⭐${PRICE_LIVES}?`)) tryBuyLives(); }
 }
 
-function normalizePath(p) {
-    const minX = Math.min(...p.map(pt => pt.x)); const minY = Math.min(...p.map(pt => pt.y));
-    return p.map(pt => ({ x: pt.x - minX, y: pt.y - minY }));
-}
-
-function rotatePath(p, angles) {
-    let current = [...p];
-    for (let a = 0; a < angles; a++) { current = current.map(pt => ({ x: -pt.y, y: pt.x })); }
-    return normalizePath(current);
-}
-
+// ===== SOLVABILITY CHECK =====
 function isLayoutSolvable(testSnakes, gridSize) {
-    const grid = Array.from({length: gridSize}, () => Array(gridSize).fill(false));
-    testSnakes.forEach(s => { s.path.forEach(p => { grid[p.y][p.x] = true; }); });
-    let remaining = [...testSnakes]; let changed = true;
+    const occupied = new Set();
+    testSnakes.forEach(s => s.path.forEach(p => occupied.add(p.y * gridSize + p.x)));
+
+    let remaining = testSnakes.map(s => ({
+        dir: s.dir,
+        path: s.path.map(p => ({ x: p.x, y: p.y }))
+    }));
+
+    let changed = true;
+    let solveOrder = [];
     while (changed && remaining.length > 0) {
         changed = false;
         for (let i = 0; i < remaining.length; i++) {
-            const s = remaining[i]; let canExit = true;
-            let cx = s.path[s.path.length - 1].x + s.dir.x; let cy = s.path[s.path.length - 1].y + s.dir.y;
-            while (cx >= 0 && cx < gridSize && cy >= 0 && cy < gridSize) {
-                if (grid[cy][cx]) { canExit = false; break; }
-                cx += s.dir.x; cy += s.dir.y;
+            const s = remaining[i];
+            s.path.forEach(p => occupied.delete(p.y * gridSize + p.x));
+
+            const simPath = s.path.map(p => ({ x: p.x, y: p.y }));
+            let canExit = true;
+            let safety = 0;
+            const maxSteps = gridSize * gridSize + simPath.length + 5;
+
+            while (simPath.length > 0 && safety < maxSteps) {
+                safety++;
+                const head = simPath[simPath.length - 1];
+                const nx = head.x + s.dir.x;
+                const ny = head.y + s.dir.y;
+                if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize) {
+                    simPath.shift();
+                } else if (occupied.has(ny * gridSize + nx)) {
+                    canExit = false; break;
+                } else {
+                    simPath.push({ x: nx, y: ny }); simPath.shift();
+                }
             }
-            if (canExit) {
-                s.path.forEach(p => { grid[p.y][p.x] = false; }); remaining.splice(i, 1); changed = true; break;
+
+            if (canExit && simPath.length === 0) {
+                solveOrder.push(i);
+                remaining.splice(i, 1); changed = true; break;
+            } else {
+                s.path.forEach(p => occupied.add(p.y * gridSize + p.x));
             }
         }
     }
-    return remaining.length === 0;
+    return { solvable: remaining.length === 0, minMoves: solveOrder.length };
 }
 
-function generateLevel(level) {
-    if (lives <= 0) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#e74c3c'; ctx.font = 'bold 24px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-        ctx.fillText('Жизни закончились!', canvas.width / 2, canvas.height / 2 - 20);
-        ctx.font = '16px system-ui'; ctx.fillStyle = '#95a5a6';
-        ctx.fillText('Восстановите их за звезды или подождите таймер', canvas.width / 2, canvas.height / 2 + 15);
-        updateUI(); return;
+// ===== LEVEL GENERATION =====
+function cellFree(grid, x, y) {
+    return x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE && !grid[y][x];
+}
+
+function getExitCells(snake) {
+    const cells = [];
+    const sim = snake.path.map(p => ({ x: p.x, y: p.y }));
+    let safety = 0;
+    while (sim.length > 0 && safety < GRID_SIZE * 4) {
+        safety++;
+        const head = sim[sim.length - 1];
+        const nx = head.x + snake.dir.x;
+        const ny = head.y + snake.dir.y;
+        if (nx < 0 || nx >= GRID_SIZE || ny < 0 || ny >= GRID_SIZE) {
+            sim.shift();
+        } else {
+            cells.push({ x: nx, y: ny });
+            sim.push({ x: nx, y: ny });
+            sim.shift();
+        }
     }
-    let numSnakes = 0;
-    if (level < 20) {
-        GRID_SIZE = Math.floor(8 + (15 - 8) * (level - 1) / 19); numSnakes = Math.floor(GRID_SIZE * 0.5) + 1;
-    } else {
-        GRID_SIZE = Math.min(24, Math.floor(15 + (24 - 15) * (level - 20) / 980)); numSnakes = Math.min(60, 10 + Math.floor((level - 20) * 0.05));
-    }
-    CELL = canvas.width / GRID_SIZE; let isSolvable = false; let attemptsLevel = 0;
-    while (!isSolvable && attemptsLevel < 200) {
-        attemptsLevel++; snakes = []; const occupied = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
-        for (let i = 0; i < numSnakes; i++) {
-            let placed = false; let attemptsPlace = 0;
-            while (!placed && attemptsPlace < 50) {
-                attemptsPlace++; let relPath = []; const type = (level >= 15) ? Math.floor(Math.random() * 3) : 0;
-                if (type === 0) {
-                    const len = 3 + Math.floor(Math.random() * 2); const isHorizontal = Math.random() > 0.5;
-                    for (let j = 0; j < len; j++) relPath.push(isHorizontal ? {x: j, y: 0} : {x: 0, y: j});
-                } else if (type === 1) {
-                    const h = 1; const w = 1; for (let y = h; y >= 0; y--) relPath.push({x: 0, y: y});
-                    for (let x = 1; x <= w; x++) relPath.push({x: x, y: 0}); for (let y = 1; y <= h; y++) relPath.push({x: w, y: y});
-                    relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
-                } else if (type === 2) {
-                    const w1 = 1; const h = 1; const w2 = 1; for (let x = 0; x <= w1; x++) relPath.push({x: x, y: 0});
-                    for (let y = 1; y <= h; y++) relPath.push({x: w1, y: y}); for (let x = w1 + 1; x <= w1 + w2; x++) relPath.push({x: x, y: h});
-                    relPath = rotatePath(relPath, Math.floor(Math.random() * 4));
-                }
-                if (Math.random() > 0.5) relPath.reverse();
-                const maxW = Math.max(...relPath.map(pt => pt.x)); const maxH = Math.max(...relPath.map(pt => pt.y));
-                if (GRID_SIZE - maxW <= 0 || GRID_SIZE - maxH <= 0) continue;
-                const startX = Math.floor(Math.random() * (GRID_SIZE - maxW)); const startY = Math.floor(Math.random() * (GRID_SIZE - maxH));
-                let canPlace = true; const path = [];
-                for (let pt of relPath) {
-                    const x = startX + pt.x; const y = startY + pt.y; if (occupied[y][x]) { canPlace = false; break; }
-                    path.push({x, y});
-                }
-                if (canPlace) {
-                    path.forEach(p => occupied[p.y][p.x] = true); const head = path[path.length - 1]; const neck = path[path.length - 2];
-                    const dir = { x: head.x - neck.x, y: head.y - neck.y };
-                    snakes.push({ id: i, path: path, dir: dir, color: COLORS[Math.floor(Math.random() * COLORS.length)], moving: false });
-                    placed = true;
-                }
+    return cells;
+}
+
+function placeSnakeBody(grid, sx, sy, dir, len) {
+    const body = [{ x: sx, y: sy }];
+    const localSet = new Set([sy * GRID_SIZE + sx]);
+    let cx = sx, cy = sy;
+    for (let i = 1; i < len; i++) {
+        const back = { x: cx - dir.x, y: cy - dir.y };
+        const alts = [back, { x: cx + dir.y, y: cy - dir.x }, { x: cx - dir.y, y: cy + dir.x }];
+        if (Math.random() < 0.75) alts.sort(() => Math.random() - 0.5);
+        let placed = false;
+        for (const a of alts) {
+            if (cellFree(grid, a.x, a.y) && !localSet.has(a.y * GRID_SIZE + a.x)) {
+                body.unshift({ x: a.x, y: a.y });
+                localSet.add(a.y * GRID_SIZE + a.x);
+                cx = a.x; cy = a.y; placed = true; break;
             }
         }
-        if (snakes.length > 0 && isLayoutSolvable(snakes, GRID_SIZE)) isSolvable = true;
+        if (!placed) break;
     }
-    updateUI(); draw();
+    return body;
+}
+
+const DIRS = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+
+function generateLevel(level) {
+    checkRecovery();
+    if (lives <= 0) { updateUI(); if (lastDeathTime > 0) {} else { showGameOverPopup(); } draw(); return; }
+
+    const config = getLevelConfig(level);
+    GRID_SIZE = config.grid; CELL = 600 / GRID_SIZE;
+    const targetSnakes = config.numSnakes; const chainDepth = config.chainDepth;
+
+    let best = null;
+    let attempts = 0;
+    while (attempts < 80) {
+        attempts++;
+        const grid = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+        const placedSnakes = [];
+        let colorIndex = 0;
+        const maxLen = level <= 15 ? 4 : (level <= 100 ? 6 : 7);
+
+        let firstPlaced = false;
+        for (let t = 0; t < 60 && !firstPlaced; t++) {
+            const dir = DIRS[Math.floor(Math.random() * 4)];
+            const sx = 1 + Math.floor(Math.random() * (GRID_SIZE - 2));
+            const sy = 1 + Math.floor(Math.random() * (GRID_SIZE - 2));
+            const len = 2 + Math.floor(Math.random() * (maxLen - 1));
+            const body = placeSnakeBody(grid, sx, sy, dir, len);
+            if (body.length >= 2) {
+                body.forEach(p => grid[p.y][p.x] = true);
+                placedSnakes.push({ id: colorIndex, color: COLORS[colorIndex % COLORS.length], path: body, dir: dir, moving: false });
+                colorIndex++; firstPlaced = true;
+            }
+        }
+        if (!firstPlaced) continue;
+
+        let placeFails = 0;
+        while (placedSnakes.length < targetSnakes && placeFails < 50) {
+            const useChain = placedSnakes.length < chainDepth || Math.random() < 0.6;
+            let blockerCreated = false;
+            if (useChain) {
+                const target = placedSnakes[placedSnakes.length - 1];
+                const exitCells = getExitCells(target).filter(c => cellFree(grid, c.x, c.y));
+                if (exitCells.length > 0) {
+                    const blockCell = exitCells[Math.floor(Math.random() * exitCells.length)];
+                    const dirsShuffled = [...DIRS].sort(() => Math.random() - 0.5);
+                    for (const dir of dirsShuffled) {
+                        const len = 2 + Math.floor(Math.random() * (maxLen - 1));
+                        const body = placeSnakeBody(grid, blockCell.x, blockCell.y, dir, len);
+                        if (body.length >= 2) {
+                            body.forEach(p => grid[p.y][p.x] = true);
+                            placedSnakes.push({ id: colorIndex, color: COLORS[colorIndex % COLORS.length], path: body, dir: dir, moving: false });
+                            colorIndex++; blockerCreated = true; break;
+                        }
+                    }
+                }
+            }
+            if (!blockerCreated) {
+                // ИСПРАВЛЕНИЕ: Гарантируем, что змейки не появляются друг на друге
+                const emptyCells = [];
+                for (let y = 0; y < GRID_SIZE; y++) {
+                    for (let x = 0; x < GRID_SIZE; x++) {
+                        if (!grid[y][x]) {
+                            emptyCells.push({x, y});
+                        }
+                    }
+                }
+                if (emptyCells.length === 0) {
+                    placeFails = 50; // Больше нет места, выходим из цикла
+                    continue;
+                }
+                const startCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                const sx = startCell.x;
+                const sy = startCell.y;
+
+                const dir = DIRS[Math.floor(Math.random() * 4)];
+                const len = 2 + Math.floor(Math.random() * (maxLen - 1));
+                const body = placeSnakeBody(grid, sx, sy, dir, len);
+                if (body.length >= 2) {
+                    body.forEach(p => grid[p.y][p.x] = true);
+                    placedSnakes.push({ id: colorIndex, color: COLORS[colorIndex % COLORS.length], path: body, dir: dir, moving: false });
+                    colorIndex++;
+                } else { placeFails++; }
+            }
+        }
+
+        if (placedSnakes.length < Math.max(2, Math.floor(targetSnakes * 0.7))) continue;
+        const result = isLayoutSolvable(placedSnakes, GRID_SIZE);
+        if (result.solvable) {
+            const score = result.minMoves + placedSnakes.length;
+            if (!best || score > best.score) { best = { snakes: placedSnakes, score: score, count: placedSnakes.length }; }
+            if (placedSnakes.length >= targetSnakes) break;
+        }
+    }
+
+    if (best) { snakes = best.snakes; }
+    else { GRID_SIZE = 6; CELL = 100; snakes = [{ id: 0, color: COLORS[0], path: [{x:2,y:2},{x:3,y:2}], dir: {x:1,y:0}, moving: false }]; }
+
+    initialSnakes = snakes.map(s => ({
+        id: s.id, color: s.color, dir: { x: s.dir.x, y: s.dir.y },
+        path: s.path.map(p => ({ x: p.x, y: p.y })), moving: false
+    }));
+    maxMoves = snakes.length + config.moveBonus;
+    movesLeft = maxMoves;
+    document.getElementById('timer-val').innerText = '';
+    updateUI();
+    draw();
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); if (lives <= 0) return;
-    const bodyWidth = CELL * 0.65; const headRadius = CELL * 0.42;
-    const eyeShift = CELL * 0.16; const eyeRadius = CELL * 0.11; const pupilRadius = CELL * 0.05;
-    snakes.forEach(s => {
-        ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = bodyWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        s.path.forEach((p, i) => { const x = p.x * CELL + CELL / 2; const y = p.y * CELL + CELL / 2; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-        ctx.stroke();
-    });
-    if (CELL > 4) {
-        snakes.forEach(s => {
-            const head = s.path[s.path.length - 1]; const hx = head.x * CELL + CELL / 2; const hy = head.y * CELL + CELL / 2;
-            ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(hx, hy, headRadius, 0, Math.PI * 2); ctx.fill();
-            ctx.strokeStyle = 'white'; ctx.lineWidth = Math.max(1, CELL * 0.08); ctx.stroke();
-            if (CELL > 12) {
-                ctx.fillStyle = 'white'; ctx.beginPath();
-                ctx.arc(hx + (s.dir.y * eyeShift), hy - (s.dir.x * eyeShift), eyeRadius, 0, Math.PI * 2);
-                ctx.arc(hx - (s.dir.y * eyeShift), hy + (s.dir.x * eyeShift), eyeRadius, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = 'black'; ctx.beginPath();
-                ctx.arc(hx + (s.dir.y * eyeShift) + (s.dir.x * (CELL * 0.05)), hy - (s.dir.x * eyeShift) + (s.dir.y * (CELL * 0.05)), pupilRadius, 0, Math.PI * 2);
-                ctx.arc(hx - (s.dir.y * eyeShift) + (s.dir.x * (CELL * 0.05)), hy + (s.dir.x * eyeShift) + (s.dir.y * (CELL * 0.05)), pupilRadius, 0, Math.PI * 2); ctx.fill();
-            }
-        });
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < GRID_SIZE; i++) {
+        ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,600); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,i*CELL); ctx.lineTo(600,i*CELL); ctx.stroke();
     }
+
+    if (lives <= 0) return;
+    const bodyWidth = CELL * 0.7;
+
+    snakes.forEach(s => {
+        const len = s.path.length;
+        const pts = s.path.map(p => ({ x: p.x*CELL+CELL/2, y: p.y*CELL+CELL/2 }));
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        for (let i = 0; i < len-1; i++) {
+            const t = (i+1)/len;
+            const w = bodyWidth*(0.45+0.55*t);
+            ctx.beginPath(); ctx.strokeStyle = s.color; ctx.lineWidth = w;
+            ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[i+1].x,pts[i+1].y); ctx.stroke();
+        }
+        if (CELL > 4) {
+            const head = pts[len-1];
+            const hr = bodyWidth*0.62;
+            const angle = Math.atan2(s.dir.y, s.dir.x);
+            ctx.save(); ctx.translate(head.x, head.y); ctx.rotate(angle);
+            ctx.fillStyle = s.color;
+            ctx.beginPath(); ctx.ellipse(hr*0.25,0,hr*1.05,hr*0.85,0,0,Math.PI*2); ctx.fill();
+            if (CELL > 12) {
+                ctx.strokeStyle = '#e84118'; ctx.lineWidth = Math.max(1,CELL*0.05); ctx.lineCap='round';
+                const tb = hr*1.2, tl = hr*0.9;
+                ctx.beginPath(); ctx.moveTo(tb,0); ctx.lineTo(tb+tl*0.6,0); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(tb+tl*0.6,0); ctx.lineTo(tb+tl,-tl*0.4);
+                ctx.moveTo(tb+tl*0.6,0); ctx.lineTo(tb+tl,tl*0.4); ctx.stroke();
+            }
+            ctx.restore();
+            if (CELL > 12) {
+                const eyeShift=hr*0.5, eyeFwd=hr*0.35, eyeR=hr*0.32, pupilR=eyeR*0.55;
+                const px=Math.cos(angle),py=Math.sin(angle),nx=-py,ny=px;
+                for (let side=-1; side<=1; side+=2) {
+                    const ex=head.x+px*eyeFwd+nx*eyeShift*side, ey=head.y+py*eyeFwd+ny*eyeShift*side;
+                    ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(ex,ey,eyeR,0,Math.PI*2); ctx.fill();
+                    ctx.fillStyle='black'; ctx.beginPath(); ctx.arc(ex+px*eyeR*0.35,ey+py*eyeR*0.35,pupilR,0,Math.PI*2); ctx.fill();
+                }
+            }
+        }
+    });
 }
 
 function startMoving(snake) {
-    if (snake.moving || lives <= 0) return;
-    snake.moving = true; triggerHaptic('click');
-    const originalPath = snake.path.map(pt => ({ x: pt.x, y: pt.y }));
-    const speed = GRID_SIZE > 20 ? 40 : 90;
+    if (snake.moving || movesLeft <= 0 || lives <= 0) return;
+
+    movesLeft--;
+    updateUI();
+    snake.moving = true;
+    triggerHaptic('click');
+
+    const originalPath = snake.path.map(p => ({ x: p.x, y: p.y }));
+    const speed = GRID_SIZE > 14 ? 50 : 80;
+
     const timer = setInterval(() => {
-        const head = snake.path[snake.path.length - 1]; const nextX = head.x + snake.dir.x; const nextY = head.y + snake.dir.y;
-        if (nextX < 0 || nextX >= GRID_SIZE || nextY < 0 || nextY >= GRID_SIZE) {
+        const head = snake.path[snake.path.length - 1];
+        const nextX = head.x + snake.dir.x;
+        const nextY = head.y + snake.dir.y;
+        const outside = nextX < 0 || nextX >= GRID_SIZE || nextY < 0 || nextY >= GRID_SIZE;
+
+        let blocked = false;
+        if (!outside) {
+            for (const other of snakes) {
+                if (other.id === snake.id) continue;
+                for (const p of other.path) { if (p.x === nextX && p.y === nextY) { blocked = true; break; } }
+                if (blocked) break;
+            }
+        }
+
+        if (outside) {
             snake.path.shift();
             if (snake.path.length === 0) {
-                clearInterval(timer); snakes = snakes.filter(s => s !== snake); updateUI();
+                clearInterval(timer);
+                snake.moving = false;
+                snakes = snakes.filter(s => s.id !== snake.id);
+                draw();
                 if (snakes.length === 0) {
                     triggerHaptic('success');
-                    setTimeout(() => { if (currentLevel < 1000) { saveAndSetLevel(currentLevel + 1); lives = 4; generateLevel(currentLevel); } }, 300);
+                    if (currentLevel < 1000) saveAndSetLevel(currentLevel + 1);
+                    setTimeout(() => generateLevel(currentLevel), 350);
+                } else {
+                    checkOutOfMoves();
                 }
+                return;
             }
+        } else if (blocked) {
+            clearInterval(timer);
+            snake.path = originalPath;
+            snake.moving = false;
+            triggerHaptic('warning');
+            draw();
+            showCollisionWarning();
+            checkOutOfMoves();
+            return;
         } else {
-            const isBlocked = snakes.some(other => other.path.some(p => p.x === nextX && p.y === nextY));
-            if (isBlocked) {
-                clearInterval(timer); snake.moving = false; lives--; snake.path = originalPath; updateUI();
-                if (lives <= 0) { showGameOverPopup(); generateLevel(currentLevel); } else { triggerHaptic('error'); }
-            } else { snake.path.push({x: nextX, y: nextY}); snake.path.shift(); }
+            snake.path.push({ x: nextX, y: nextY });
+            snake.path.shift();
         }
         draw();
     }, speed);
 }
 
-function handleInput(clientX, clientY) {
-    if (lives <= 0) return;
-    const rect = canvas.getBoundingClientRect(); const canvasX = (clientX - rect.left) * (canvas.width / rect.width); const canvasY = (clientY - rect.top) * (canvas.height / rect.height);
-    const mx = Math.floor(canvasX / CELL); const my = Math.floor(canvasY / CELL);
-    const clickedSnake = snakes.find(s => { const head = s.path[s.path.length - 1]; return head.x === mx && head.y === my; });
-    if (clickedSnake) startMoving(clickedSnake);
+function showCollisionWarning() {
+    const timerEl = document.getElementById('timer-val');
+    timerEl.style.color = '#f39c12';
+    timerEl.innerText = `💥 Blocked! Move wasted.`;
+    if (warningTimeout) clearTimeout(warningTimeout);
+    warningTimeout = setTimeout(() => {
+        timerEl.innerText = '';
+        timerEl.style.color = '#95a5a6';
+    }, 1500);
 }
 
-canvas.addEventListener('click', (e) => handleInput(e.clientX, e.clientY));
-canvas.addEventListener('touchstart', (e) => { if(e.touches.length > 0) handleInput(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+function resetCurrentPuzzle() {
+    triggerHaptic('click');
+    snakes = initialSnakes.map(s => ({
+        ...s,
+        path: s.path.map(p => ({ ...p }))
+    }));
+    movesLeft = maxMoves;
+    updateUI();
+    draw();
+}
+
+function loseLifeAndRestart() {
+    lives--;
+    triggerHaptic('error');
+    updateUI();
+    if (lives <= 0) {
+        showGameOverPopup();
+    } else {
+        if (tg) {
+            tg.showPopup({
+                title: '❌ Out of moves!',
+                message: `You lost a life (${lives} ❤️ left). Try this puzzle again.`,
+                buttons: [{ type: 'default', text: 'Try again' }]
+            }, () => resetCurrentPuzzle());
+        } else {
+            alert(`❌ Out of moves! ${lives} ❤️ left.`);
+            resetCurrentPuzzle();
+        }
+    }
+}
+
+function checkOutOfMoves() {
+    if (movesLeft <= 0 && snakes.length > 0) {
+        const anyMoving = snakes.some(s => s.moving);
+        if (!anyMoving) {
+            loseLifeAndRestart();
+        }
+    }
+}
+
+function handleClick(e) {
+    if (lives <= 0) return;
+    if (movesLeft <= 0) {
+        checkOutOfMoves();
+        return;
+    }
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const cellX = Math.floor((clientX - rect.left) * scaleX / CELL);
+    const cellY = Math.floor((clientY - rect.top) * scaleY / CELL);
+
+    for (const s of snakes) {
+        if (s.moving) continue;
+        for (const p of s.path) {
+            if (p.x === cellX && p.y === cellY) { startMoving(s); return; }
+        }
+    }
+}
+
+canvas.addEventListener('click', handleClick);
+canvas.addEventListener('touchstart', function(e){ e.preventDefault(); handleClick(e); }, { passive:false });
 
 generateLevel(currentLevel);
-updateUI();
+
 </script>
 </body>
 </html>
